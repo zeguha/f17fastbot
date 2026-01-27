@@ -1,0 +1,35 @@
+{
+  "name": "vpn-bot",
+  "version": "1.0.0",
+  "description": "",
+  "main": "dist/bot.js",
+  "scripts": {
+    "start": "node dist/main.js",
+    "build": "tsc",
+    "dev": "ts-node src/main.ts",
+    "prisma:migrate": "prisma migrate dev",
+    "prisma:studio": "prisma studio",
+    "prisma:generate": "prisma generate"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.24.0",
+  "dependencies": {
+    "@prisma/cli": "^2.20.1",
+    "@prisma/client": "6",
+    "@types/express": "^5.0.6",
+    "axios": "^1.13.3",
+    "dotenv": "^17.2.3",
+    "express": "^5.2.1",
+    "lava-top-sdk": "^1.0.1",
+    "node-cron": "^4.2.1",
+    "prisma": "6",
+    "telegraf": "^4.16.3"
+  },
+  "devDependencies": {
+    "@types/node": "^25.0.10",
+    "ts-node": "^10.9.2",
+    "typescript": "^5.9.3"
+  }
+}
