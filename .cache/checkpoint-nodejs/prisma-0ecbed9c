@@ -1,0 +1,53 @@
+{
+  "last_reminder": 1769554004384,
+  "cached_at": 1769553992771,
+  "version": "6.19.2",
+  "cli_path": "/opt/vpn-bot/node_modules/prisma/build/index.js",
+  "output": {
+    "product": "prisma",
+    "previous_version": "6.19.2",
+    "checkpoint_version": 4,
+    "local_timestamp_without_timezone": "2026-01-27T22:46:32Z",
+    "current_version": "7.3.0",
+    "current_release_date": 1769011161,
+    "client_event_id": "9ad997fd-7a8e-49fc-aa4f-464b4d9d9dfa",
+    "current_download_url": "https://github.com/prisma/prisma",
+    "package": "prisma",
+    "release_tag": "latest",
+    "install_command": "npm install --save-dev prisma",
+    "schema_providers": [
+      "sqlite"
+    ],
+    "schema_preview_features": [],
+    "schema_generators_providers": [
+      "prisma-client-js"
+    ],
+    "current_changelog_url": "https://github.com/prisma/prisma",
+    "outdated": true,
+    "project_website": "https://prisma.io",
+    "alerts": []
+  },
+  "product": "prisma",
+  "cli_install_type": "local",
+  "local_timestamp": "2026-01-27T23:44:08Z",
+  "project_hash": "4f1b6291",
+  "cli_path_hash": "0ecbed9c",
+  "endpoint": "https://checkpoint.prisma.io",
+  "arch": "x64",
+  "os": "linux",
+  "node_version": "v20.20.0",
+  "command": "generate",
+  "schema_providers": [
+    "sqlite"
+  ],
+  "schema_preview_features": [],
+  "schema_generators_providers": [
+    "prisma-client-js"
+  ],
+  "cache_file": "/opt/vpn-bot/.cache/checkpoint-nodejs/prisma-0ecbed9c",
+  "cache_duration": 43200000,
+  "remind_duration": 172800000,
+  "timeout": 5000,
+  "unref": true,
+  "child_path": "/opt/vpn-bot/node_modules/.pnpm/prisma@6.19.2_typescript@5.9.3/node_modules/prisma/build/child"
+}

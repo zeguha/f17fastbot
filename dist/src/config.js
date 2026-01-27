@@ -6,7 +6,7 @@ exports.config = {
     // Telegram Bot
     botToken: process.env.BOT_TOKEN,
     // X-UI Panel
-    inboundId: Number(process.env.INBOUND_ID || 1),
+    inboundId: Number(process.env.INBOUND_ID || 3),
     xui: {
         url: process.env.XUI_URL,
         login: process.env.XUI_LOGIN,
