@@ -19,13 +19,15 @@ interface PlanData {
 
 const PLANS: PlanData[] = [
   { code: '1m', title: '1 месяц', days: 30, price: 199, priceText: '199 ₽' },
-  { code: '3m', title: '3 месяца', days: 90, price: 499, priceText: '499 ₽' },
-  { code: '12m', title: '12 месяцев', days: 365, price: 1499, priceText: '1499 ₽' }
+  { code: '3m', title: '3 месяца', days: 90, price: 549, priceText: '549 ₽' },
+  { code: '12m', title: '12 месяцев', days: 365, price: 2199, priceText: '2199 ₽' }
 ];
 
 class VPNBot {
   private bot: Telegraf;
   private paymentCheckInterval?: NodeJS.Timeout;
+  // Простое состояние для режима "обращение в поддержку"
+  private supportMode = new Set<number>();
 
   constructor() {
     if (!config.botToken) {
@@ -135,7 +137,7 @@ class VPNBot {
       const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
       const clientId = randomUUID();
       const subId = randomUUID().replace(/-/g, '');
-      const email = `user${user.telegramId}-${subId}@f17vpn.com`;
+      const email = `user${user.telegramId}-${subId}@f17.com`;
 
       // Создаем клиента в X-UI
       const clientData = {
@@ -317,6 +319,9 @@ class VPNBot {
     if (tgId) {
       buttons.push([Markup.button.callback('📋 Моя подписка', 'menu:mysub')]);
     }
+
+    // Поддержка доступна всем
+    buttons.push([Markup.button.callback('🆘 Поддержка', 'menu:support')]);
     
     return Markup.inlineKeyboard(buttons);
   }
@@ -348,8 +353,8 @@ class VPNBot {
       
       await ctx.reply(
         `Привет, ${name}! 👋\n\n` +
-        `Я помогу тебе настроить VPN доступ.\n` +
-        `Выбери подписку и оплати через криптовалюту.`,
+        `Я помогу тебе настроить доступ к ускорителю интернета.\n` +
+        `Выбери подписку и оплати картой РФ.`,
         this.mainMenuKeyboard(tgId)
       );
     });
@@ -358,6 +363,20 @@ class VPNBot {
     this.bot.command('subscribe', async (ctx) => {
       const tgId = ctx.from?.id;
       await ctx.reply('Выбери план подписки:', this.plansKeyboard());
+    });
+
+    // Команда /cancel — выход из режима обращения
+    this.bot.command('cancel', async (ctx) => {
+      const tgId = ctx.from?.id;
+      if (!tgId) return;
+
+      if (!this.supportMode.has(tgId)) {
+        await ctx.reply('Нечего отменять.', this.mainMenuKeyboard(tgId));
+        return;
+      }
+
+      this.supportMode.delete(tgId);
+      await ctx.reply('❌ Обращение отменено. Возвращаю в главное меню.', this.mainMenuKeyboard(tgId));
     });
 
     // Админ-команда: выдать себе тестовую подписку без оплаты
@@ -384,7 +403,7 @@ class VPNBot {
       const existing = await this.getActiveSubscription(tgId);
       if (existing) {
         await ctx.reply(
-          'У тебя уже есть активная подписка. Сначала отмени её через /mysub → «Отменить подписку», чтобы протестировать удаление.',
+          'У тебя уже есть активная подписка. Сначала отмени её через /mysub → «Отменить подписку».',
           this.mainMenuKeyboard(tgId)
         );
         return;
@@ -401,7 +420,7 @@ class VPNBot {
       const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
       const clientId = randomUUID();
       const subId = randomUUID().replace(/-/g, '');
-      const email = `user${user.telegramId}-${subId}@f17vpn.com`;
+      const email = `user${user.telegramId}-${subId}@f17.com`;
 
       // Создаем клиента в X-UI
       const clientData = {
@@ -549,6 +568,76 @@ class VPNBot {
       await this.safeEditOrReply(ctx, 'Главное меню', this.mainMenuKeyboard(tgId));
     });
 
+    // Кнопка "Поддержка"
+    this.bot.action('menu:support', async (ctx) => {
+      await ctx.answerCbQuery();
+      const tgId = ctx.from?.id;
+      if (!tgId) return;
+
+      this.supportMode.add(tgId);
+
+      await this.safeEditOrReply(
+        ctx,
+        '🆘 Поддержка\n\n' +
+          'Напишите текст обращения одним сообщением.\n' +
+          'Чтобы выйти без отправки — /cancel',
+        undefined
+      );
+    });
+
+    // Прием сообщений в режиме поддержки
+    this.bot.on('message', async (ctx) => {
+      const tgId = ctx.from?.id;
+      if (!tgId) return;
+      if (!this.supportMode.has(tgId)) return;
+
+      // Защита: команды в режиме поддержки (кроме /cancel)
+      const msg: any = ctx.message;
+      const maybeText = typeof msg?.text === 'string' ? msg.text : undefined;
+      if (maybeText && maybeText.startsWith('/') && maybeText !== '/cancel') {
+        await ctx.reply('Сейчас вы в режиме обращения. Отправьте текст или нажмите /cancel.');
+        return;
+      }
+
+      // Разрешаем только текст
+      if (!maybeText) {
+        await ctx.reply('Пожалуйста, отправьте именно текстовое сообщение. Чтобы выйти — /cancel.');
+        return;
+      }
+
+      const text = maybeText.trim();
+      if (!text) {
+        await ctx.reply('Сообщение не должно быть пустым. Напишите текст обращения или /cancel.');
+        return;
+      }
+
+      const firstName = ctx.from?.first_name || '—';
+      const username = ctx.from?.username ? `@${ctx.from.username}` : '—';
+      const userId = tgId;
+
+      const adminText =
+        '📩 <b>Обращение в поддержку</b>\n' +
+        `• <b>Имя:</b> ${this.escapeHtml(firstName)}\n` +
+        `• <b>Username:</b> ${this.escapeHtml(username)}\n` +
+        `• <b>User ID:</b> <code>${userId}</code>\n\n` +
+        `<b>Текст:</b>\n${this.escapeHtml(text)}`;
+
+      try {
+        await this.bot.telegram.sendMessage(config.adminChatId, adminText, { parse_mode: 'HTML' });
+      } catch (e) {
+        console.error('Ошибка отправки обращения админу:', e);
+        await ctx.reply(
+          '❌ Не удалось отправить сообщение в поддержку. Попробуйте позже.',
+          this.mainMenuKeyboard(tgId)
+        );
+        // остаемся в режиме поддержки, чтобы пользователь мог попробовать снова
+        return;
+      }
+
+      this.supportMode.delete(tgId);
+      await ctx.reply('✅ Сообщение отправлено в поддержку. Возвращаю в главное меню.', this.mainMenuKeyboard(tgId));
+    });
+
     // Выбор плана
     this.bot.action(/^plan:(.+)$/, async (ctx) => {
       await ctx.answerCbQuery();
@@ -576,12 +665,12 @@ class VPNBot {
       }
 
       // Создаем уникальный orderId
-      const orderId = `vpn_${tgId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
+      const orderId = `order_${tgId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
       try {
         // Создаем счет в Lava Public API (gate.lava.top)
         // Email обязателен для Lava, используем технический адрес по tgId.
-        const buyerEmail = `tg${tgId}@f17vpn.com`;
+        const buyerEmail = `tg${tgId}@f17.com`;
         const invoiceResponse = await lavaClient.createInvoice(planCode, buyerEmail);
 
         // Сохраняем платеж в БД
@@ -592,7 +681,7 @@ class VPNBot {
             invoiceId: invoiceResponse.id,
             orderId: orderId,
             amount: plan.price,
-            description: `VPN подписка: ${planData.title}`,
+            description: `Fast подписка: ${planData.title}`,
             payUrl: invoiceResponse.url,
             status: 'pending'
           }
@@ -706,7 +795,7 @@ class VPNBot {
         ctx,
         '⚠️ Вы уверены, что хотите отменить подписку?\n\n' +
         'После отмены:\n' +
-        '• Доступ к VPN будет прекращен\n' +
+        '• Доступ к ускорителю будет прекращен\n' +
         '• Ссылка перестанет работать',
         Markup.inlineKeyboard([
           [Markup.button.callback('✅ Да, отменить', `confirmcancelsub:${tgId}`)],
@@ -732,7 +821,7 @@ class VPNBot {
           const deleteResult = await xuiClient.deleteClient(
             config.inboundId, 
             subscription.xuiClientId, 
-            subscription.xuiEmail || `user${tgId}@f17vpn.com`
+            subscription.xuiEmail || `user${tgId}@f17.com`
           );
           
           if (!deleteResult.success) {
@@ -762,7 +851,7 @@ class VPNBot {
 
         await ctx.reply(
           '✅ Подписка отменена!\n' +
-          'Доступ к VPN прекращен.',
+          'Доступ к ускорителю прекращен.',
           this.mainMenuKeyboard(tgId)
         );
 
@@ -781,6 +870,15 @@ class VPNBot {
       const tgId = ctx.from?.id;
       ctx.reply('Произошла ошибка. Попробуйте еще раз.', this.mainMenuKeyboard(tgId));
     });
+  }
+
+  private escapeHtml(input: string): string {
+    return input
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#039;');
   }
 
   public async launch() {

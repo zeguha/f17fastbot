@@ -5,6 +5,9 @@ exports.config = void 0;
 exports.config = {
     // Telegram Bot
     botToken: process.env.BOT_TOKEN,
+    // Админ для обращений в поддержку (chat_id / user_id админа)
+    // Пример: ADMIN_CHAT_ID=123456789
+    adminChatId: Number(process.env.ADMIN_CHAT_ID),
     // X-UI Panel
     inboundId: Number(process.env.INBOUND_ID || 3),
     xui: {
@@ -33,6 +36,7 @@ exports.config = {
 // Проверка обязательных переменных
 const required = [
     'BOT_TOKEN',
+    'ADMIN_CHAT_ID',
     'XUI_URL',
     'XUI_LOGIN',
     'XUI_PASSWORD',
@@ -50,6 +54,9 @@ for (const env of required) {
 // Дополнительная валидация формата
 if (!Number.isFinite(exports.config.inboundId) || exports.config.inboundId <= 0) {
     throw new Error('INBOUND_ID должен быть положительным числом');
+}
+if (!Number.isFinite(exports.config.adminChatId) || exports.config.adminChatId <= 0) {
+    throw new Error('ADMIN_CHAT_ID должен быть положительным числом (chat_id админа)');
 }
 try {
     // eslint-disable-next-line no-new

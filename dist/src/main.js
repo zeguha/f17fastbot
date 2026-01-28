@@ -12,7 +12,7 @@ async function startBot() {
         console.log('• Проверка платежей: каждые 30 секунд');
         console.log('• База данных: SQLite');
         console.log('• Платежная система: Lava.Top');
-        console.log('• Для тестирования используйте /subscribe');
+        console.log('• Для подписки используйте /subscribe');
     }
     catch (error) {
         console.error('❌ Ошибка запуска бота:', error.message);

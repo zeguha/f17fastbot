@@ -100,8 +100,8 @@ async function main() {
   // Создаем планы
   const plans = [
     { name: '1m', price: 199, duration: 30 },
-    { name: '3m', price: 499, duration: 90 },
-    { name: '12m', price: 1499, duration: 365 },
+    { name: '3m', price: 549, duration: 90 },
+    { name: '12m', price: 2199, duration: 365 },
   ];
 
   for (const plan of plans) {
