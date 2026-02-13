@@ -108,14 +108,6 @@ class VPNBot {
                     payTime: new Date()
                 }
             });
-            // Отменяем старую активную подписку
-            await prisma_1.default.subscription.updateMany({
-                where: {
-                    userId: user.id,
-                    status: 'active'
-                },
-                data: { status: 'cancelled' }
-            });
             // Создаем новую подписку
             const now = new Date();
             const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
@@ -125,7 +117,7 @@ class VPNBot {
             // Создаем клиента в X-UI
             const clientData = {
                 id: clientId,
-                flow: '',
+                flow: 'xtls-rprx-vision',
                 email: email,
                 limitIp: 0,
                 totalGB: 0,
@@ -272,11 +264,40 @@ class VPNBot {
         });
         return user?.subscriptions[0] || null;
     }
+    async getActiveSubscriptions(tgId) {
+        const user = await prisma_1.default.user.findUnique({
+            where: { telegramId: BigInt(tgId) },
+            include: {
+                subscriptions: {
+                    where: {
+                        status: 'active',
+                        endAt: { gt: new Date() },
+                    },
+                    include: {
+                        plan: true,
+                    },
+                    orderBy: {
+                        endAt: 'desc',
+                    },
+                },
+            },
+        });
+        return user?.subscriptions || [];
+    }
+    subscriptionsListKeyboard(subs) {
+        const rows = subs.map((s) => {
+            const planTitle = this.getPlanTitle(s.plan?.name || '');
+            const until = s.endAt ? this.formatDate(new Date(s.endAt)) : '—';
+            return [telegraf_1.Markup.button.callback(`📱 ${planTitle} до ${until}`, `sub:open:${s.id}`)];
+        });
+        rows.push([telegraf_1.Markup.button.callback('« В главное меню', 'menu:back')]);
+        return telegraf_1.Markup.inlineKeyboard(rows);
+    }
     mainMenuKeyboard(tgId) {
         const buttons = [];
         buttons.push([telegraf_1.Markup.button.callback('💳 Купить подписку', 'menu:subscribe')]);
         if (tgId) {
-            buttons.push([telegraf_1.Markup.button.callback('📋 Моя подписка', 'menu:mysub')]);
+            buttons.push([telegraf_1.Markup.button.callback('📋 Мои подписки', 'menu:mysub')]);
         }
         // Поддержка доступна всем
         buttons.push([telegraf_1.Markup.button.callback('🆘 Поддержка', 'menu:support')]);
@@ -289,10 +310,11 @@ class VPNBot {
         rows.push([telegraf_1.Markup.button.callback('« Назад', 'menu:back')]);
         return telegraf_1.Markup.inlineKeyboard(rows);
     }
-    subscriptionInfoKeyboard() {
+    subscriptionInfoKeyboard(subscriptionId) {
         return telegraf_1.Markup.inlineKeyboard([
-            [telegraf_1.Markup.button.callback('❌ Отменить подписку', 'menu:cancelsub')],
-            [telegraf_1.Markup.button.callback('« Назад', 'menu:back')]
+            [telegraf_1.Markup.button.callback('❌ Отменить подписку', `sub:cancelsub:${subscriptionId}`)],
+            [telegraf_1.Markup.button.callback('« К списку подписок', 'menu:mysub')],
+            [telegraf_1.Markup.button.callback('« В главное меню', 'menu:back')],
         ]);
     }
     setupHandlers() {
@@ -339,11 +361,6 @@ class VPNBot {
             const text = ctx.message?.text;
             const arg = text?.split(/\s+/).slice(1)[0]?.trim();
             const planCode = (arg && ['1m', '3m', '12m'].includes(arg) ? arg : '1m');
-            const existing = await this.getActiveSubscription(tgId);
-            if (existing) {
-                await ctx.reply('У тебя уже есть активная подписка. Сначала отмени её через /mysub → «Отменить подписку».', this.mainMenuKeyboard(tgId));
-                return;
-            }
             const plan = await this.getPlan(planCode);
             if (!plan) {
                 await ctx.reply('План не найден в базе данных.');
@@ -358,7 +375,7 @@ class VPNBot {
             // Создаем клиента в X-UI
             const clientData = {
                 id: clientId,
-                flow: '',
+                flow: 'xtls-rprx-vision',
                 email,
                 limitIp: 0,
                 totalGB: 0,
@@ -374,7 +391,7 @@ class VPNBot {
                 await ctx.reply(`❌ Не удалось создать клиента в X-UI: ${result.msg}`);
                 return;
             }
-            await prisma_1.default.subscription.create({
+            const createdSub = await prisma_1.default.subscription.create({
                 data: {
                     userId: user.id,
                     planId: plan.id,
@@ -393,7 +410,7 @@ class VPNBot {
                 `🔗 Ссылка для подключения:\n<code>${subLink}</code>\n\n` +
                 `Чтобы протестировать удаление: /mysub → «Отменить подписку»`, {
                 parse_mode: 'HTML',
-                ...this.subscriptionInfoKeyboard(),
+                ...this.subscriptionInfoKeyboard(createdSub.id),
             });
         });
         // Команда /mysub
@@ -403,11 +420,16 @@ class VPNBot {
                 await ctx.reply('Ошибка: не удалось определить пользователя');
                 return;
             }
-            const subscription = await this.getActiveSubscription(tgId);
-            if (!subscription) {
+            const subs = await this.getActiveSubscriptions(tgId);
+            if (!subs.length) {
                 await ctx.reply('У тебя нет активной подписки.', this.mainMenuKeyboard(tgId));
                 return;
             }
+            if (subs.length > 1) {
+                await ctx.reply(`📋 Твои активные подписки: ${subs.length}\n\nВыбери подписку, чтобы посмотреть ссылку или отменить:`, this.subscriptionsListKeyboard(subs));
+                return;
+            }
+            const subscription = subs[0];
             const daysLeft = Math.ceil((subscription.endAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             const subLink = subscription.subId
                 ? `${config_1.config.publicSubUrl}/sub/${subscription.subId}`
@@ -422,7 +444,7 @@ class VPNBot {
                     : `🔗 Ссылка для подключения: недоступна (обратитесь в поддержку)\n\n`) +
                 `Сохрани эту ссылку!`, {
                 parse_mode: 'HTML',
-                ...this.subscriptionInfoKeyboard()
+                ...this.subscriptionInfoKeyboard(subscription.id)
             });
         });
         // Кнопка "Купить подписку"
@@ -438,11 +460,16 @@ class VPNBot {
                 await ctx.reply('Ошибка: не удалось определить пользователя');
                 return;
             }
-            const subscription = await this.getActiveSubscription(tgId);
-            if (!subscription) {
+            const subs = await this.getActiveSubscriptions(tgId);
+            if (!subs.length) {
                 await this.safeEditOrReply(ctx, 'У тебя нет активной подписки.', this.mainMenuKeyboard(tgId));
                 return;
             }
+            if (subs.length > 1) {
+                await this.safeEditOrReply(ctx, `📋 Твои активные подписки: ${subs.length}\n\nВыбери подписку, чтобы посмотреть ссылку или отменить:`, this.subscriptionsListKeyboard(subs));
+                return;
+            }
+            const subscription = subs[0];
             const daysLeft = Math.ceil((subscription.endAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
             const subLink = subscription.subId
                 ? `${config_1.config.publicSubUrl}/sub/${subscription.subId}`
@@ -457,8 +484,122 @@ class VPNBot {
                     : `🔗 Ссылка для подключения: недоступна (обратитесь в поддержку)\n\n`) +
                 `Сохрани эту ссылку!`, {
                 parse_mode: 'HTML',
-                ...this.subscriptionInfoKeyboard()
+                ...this.subscriptionInfoKeyboard(subscription.id)
             });
+        });
+        // Открыть конкретную подписку из списка
+        this.bot.action(/^sub:open:(\d+)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const tgId = ctx.from?.id;
+            const subId = Number(ctx.match[1]);
+            if (!tgId)
+                return;
+            const subscription = await prisma_1.default.subscription.findFirst({
+                where: {
+                    id: subId,
+                    status: 'active',
+                    endAt: { gt: new Date() },
+                    user: { telegramId: BigInt(tgId) },
+                },
+                include: { plan: true },
+            });
+            if (!subscription) {
+                await this.safeEditOrReply(ctx, 'Подписка не найдена или уже неактивна.', this.mainMenuKeyboard(tgId));
+                return;
+            }
+            const daysLeft = Math.ceil((subscription.endAt.getTime() - Date.now()) / (1000 * 60 * 60 * 24));
+            const subLink = subscription.subId ? `${config_1.config.publicSubUrl}/sub/${subscription.subId}` : null;
+            const planTitle = this.getPlanTitle(subscription.plan.name);
+            await this.safeEditOrReply(ctx, `📋 Подписка #${subscription.id}:\n\n` +
+                `План: ${planTitle}\n` +
+                `Действует до: ${this.formatDate(subscription.endAt)}\n` +
+                `Осталось дней: ${daysLeft}\n\n` +
+                (subLink
+                    ? `🔗 Ссылка для подключения:\n<code>${subLink}</code>\n\n`
+                    : `🔗 Ссылка для подключения: недоступна (обратитесь в поддержку)\n\n`) +
+                `Сохрани эту ссылку!`, {
+                parse_mode: 'HTML',
+                ...this.subscriptionInfoKeyboard(subscription.id),
+            });
+        });
+        // Запрос отмены конкретной подписки
+        this.bot.action(/^sub:cancelsub:(\d+)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const tgId = ctx.from?.id;
+            const subId = Number(ctx.match[1]);
+            if (!tgId)
+                return;
+            const subscription = await prisma_1.default.subscription.findFirst({
+                where: {
+                    id: subId,
+                    status: 'active',
+                    endAt: { gt: new Date() },
+                    user: { telegramId: BigInt(tgId) },
+                },
+                include: { plan: true },
+            });
+            if (!subscription) {
+                await this.safeEditOrReply(ctx, 'Подписка не найдена или уже неактивна.', this.mainMenuKeyboard(tgId));
+                return;
+            }
+            await this.safeEditOrReply(ctx, `⚠️ Вы уверены, что хотите отменить подписку #${subscription.id} (${this.getPlanTitle(subscription.plan.name)})?\n\n` +
+                'После отмены:\n' +
+                '• Доступ к ускорителю по этой ссылке будет прекращен\n' +
+                '• Остальные подписки (если есть) останутся активными', telegraf_1.Markup.inlineKeyboard([
+                [telegraf_1.Markup.button.callback('✅ Да, отменить', `sub:confirmcancel:${subscription.id}`)],
+                [telegraf_1.Markup.button.callback('« Назад к подписке', `sub:open:${subscription.id}`)],
+                [telegraf_1.Markup.button.callback('« К списку подписок', 'menu:mysub')],
+            ]));
+        });
+        // Подтверждение отмены конкретной подписки
+        this.bot.action(/^sub:confirmcancel:(\d+)$/, async (ctx) => {
+            await ctx.answerCbQuery();
+            const tgId = ctx.from?.id;
+            const subId = Number(ctx.match[1]);
+            if (!tgId)
+                return;
+            await this.safeEditOrReply(ctx, 'Отменяю подписку...');
+            try {
+                const subscription = await prisma_1.default.subscription.findFirst({
+                    where: {
+                        id: subId,
+                        status: 'active',
+                        user: { telegramId: BigInt(tgId) },
+                    },
+                });
+                if (!subscription) {
+                    await ctx.reply('Подписка не найдена или уже отменена.', this.mainMenuKeyboard(tgId));
+                    return;
+                }
+                if (subscription.xuiClientId) {
+                    const deleteResult = await xui_1.xuiClient.deleteClient(config_1.config.inboundId, subscription.xuiClientId, subscription.xuiEmail || `user${tgId}@f17.com`);
+                    if (!deleteResult.success) {
+                        const altResult = await xui_1.xuiClient.deleteClientAlternative(config_1.config.inboundId, {
+                            clientId: subscription.xuiClientId,
+                            email: subscription.xuiEmail || undefined,
+                            subId: subscription.subId || undefined,
+                            tgId: String(tgId),
+                        });
+                        if (!altResult.success) {
+                            throw new Error('Не удалось удалить клиента из X-UI');
+                        }
+                    }
+                }
+                await prisma_1.default.subscription.update({
+                    where: { id: subscription.id },
+                    data: { status: 'cancelled' },
+                });
+                const subs = await this.getActiveSubscriptions(tgId);
+                if (!subs.length) {
+                    await ctx.reply('✅ Подписка отменена. Активных подписок больше нет.', this.mainMenuKeyboard(tgId));
+                    return;
+                }
+                await ctx.reply('✅ Подписка отменена. Остальные подписки активны.', this.subscriptionsListKeyboard(subs));
+            }
+            catch (error) {
+                console.error('Ошибка отмены подписки:', error);
+                await ctx.reply(`❌ Ошибка: ${error.message}`, this.mainMenuKeyboard(tgId));
+            }
         });
         // Кнопка "Назад"
         this.bot.action('menu:back', async (ctx) => {
@@ -635,18 +776,20 @@ class VPNBot {
                 await ctx.reply('Ошибка: не удалось определить пользователя');
                 return;
             }
-            const subscription = await this.getActiveSubscription(tgId);
-            if (!subscription) {
+            // Backward-compat: если где-то осталась старая кнопка, перенаправляем
+            const subs = await this.getActiveSubscriptions(tgId);
+            if (!subs.length) {
                 await this.safeEditOrReply(ctx, 'У тебя нет активной подписки.', this.mainMenuKeyboard(tgId));
                 return;
             }
-            await this.safeEditOrReply(ctx, '⚠️ Вы уверены, что хотите отменить подписку?\n\n' +
-                'После отмены:\n' +
-                '• Доступ к ускорителю будет прекращен\n' +
-                '• Ссылка перестанет работать', telegraf_1.Markup.inlineKeyboard([
-                [telegraf_1.Markup.button.callback('✅ Да, отменить', `confirmcancelsub:${tgId}`)],
-                [telegraf_1.Markup.button.callback('❌ Нет', 'menu:back')]
-            ]));
+            if (subs.length === 1) {
+                await this.safeEditOrReply(ctx, 'Выбрана подписка для отмены:', telegraf_1.Markup.inlineKeyboard([
+                    [telegraf_1.Markup.button.callback('❌ Отменить', `sub:cancelsub:${subs[0].id}`)],
+                    [telegraf_1.Markup.button.callback('« Назад', 'menu:mysub')],
+                ]));
+                return;
+            }
+            await this.safeEditOrReply(ctx, `У тебя ${subs.length} активных подписок. Выбери, какую отменить:`, this.subscriptionsListKeyboard(subs));
         });
         // Подтверждение отмены
         this.bot.action(/^confirmcancelsub:(\d+)$/, async (ctx) => {
@@ -656,6 +799,7 @@ class VPNBot {
                 return;
             await ctx.editMessageText('Отменяю подписку...');
             try {
+                // Backward-compat: отменяем «последнюю» активную, если старый callback вызван
                 const subscription = await this.getActiveSubscription(tgId);
                 if (subscription && subscription.xuiClientId) {
                     // Удаляем клиента из X-UI
@@ -674,14 +818,13 @@ class VPNBot {
                         }
                     }
                 }
-                // Обновляем статус подписки
-                await prisma_1.default.subscription.updateMany({
-                    where: {
-                        user: { telegramId: BigInt(tgId) },
-                        status: 'active'
-                    },
-                    data: { status: 'cancelled' }
-                });
+                // Обновляем статус подписки (только одной)
+                if (subscription) {
+                    await prisma_1.default.subscription.update({
+                        where: { id: subscription.id },
+                        data: { status: 'cancelled' },
+                    });
+                }
                 await ctx.reply('✅ Подписка отменена!\n' +
                     'Доступ к ускорителю прекращен.', this.mainMenuKeyboard(tgId));
             }
