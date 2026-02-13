@@ -712,7 +712,7 @@ class VPNBot {
               clientId: subscription.xuiClientId,
               email: subscription.xuiEmail || undefined,
               subId: subscription.subId || undefined,
-              tgId: String(tgId),
+              // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
             });
 
             if (!altResult.success) {
@@ -1013,7 +1013,7 @@ class VPNBot {
               email: subscription.xuiEmail || undefined,
               // subId может быть полезен для поиска, если clientId/email не совпали
               subId: subscription.subId || undefined,
-              tgId: String(tgId),
+              // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
             });
             
             if (!altResult.success) {
