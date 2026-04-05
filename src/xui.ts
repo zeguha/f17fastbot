@@ -6,6 +6,11 @@ interface ClientData {
   id: string;
   flow?: string;
   email: string;
+  // vmess
+  security?: string;
+  // shadowsocks
+  method?: string;
+  password?: string;
   limitIp?: number;
   totalGB?: number;
   expiryTime?: number;
@@ -95,6 +100,29 @@ class XUIClient {
         success: false, 
         msg: error.response?.data?.msg || error.message || 'Ошибка сети',
         obj: null 
+      };
+    }
+  }
+
+  async getInbound(inboundId: number): Promise<ApiResponse> {
+    await this.ensureAuth();
+
+    try {
+      const response = await axios.get(`${this.baseURL}/panel/api/inbounds/get/${inboundId}`, {
+        headers: {
+          'Cookie': this.sessionCookie,
+        },
+        httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+        timeout: 10000,
+      });
+
+      return response.data || { success: false, msg: 'Пустой ответ', obj: null };
+    } catch (error: any) {
+      console.error('Ошибка получения inbound X-UI:', error.message);
+      return {
+        success: false,
+        msg: error.response?.data?.msg || error.message || 'Ошибка сети',
+        obj: null,
       };
     }
   }

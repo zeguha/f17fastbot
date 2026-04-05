@@ -116,10 +116,10 @@ class VPNBot {
             // В некоторых форках x-ui email должен быть уникальным глобально,
             // поэтому при мульти-inbound делаем email уникальным на каждый inbound.
             const emailBase = `user${user.telegramId}-${subId}`;
-            // Создаем клиента в X-UI (один и тот же клиент во всех inbound'ах)
+            // Создаем клиента в X-UI (один и тот же clientId/subId во всех inbound'ах).
+            // ВАЖНО: для разных протоколов нужны разные поля (например, vmess->security, ss->method/password).
             const clientDataBase = {
                 id: clientId,
-                flow: 'xtls-rprx-vision',
                 // email зададим ниже (уникальный для каждого inbound)
                 limitIp: 0,
                 totalGB: 0,
@@ -128,22 +128,60 @@ class VPNBot {
                 tgId: String(user.telegramId),
                 subId: subId,
                 comment: `tg:${user.telegramId} plan:${plan.name}`,
-                reset: 0
+                reset: 0,
             };
             // Если не задан INBOUND_IDS, используем INBOUND_ID (backward compat)
             const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
                 ? config_1.config.inboundIds
                 : [config_1.config.inboundId];
+            const inboundCache = new Map();
+            const getInbound = async (inboundId) => {
+                if (inboundCache.has(inboundId))
+                    return inboundCache.get(inboundId);
+                const r = await xui_1.xuiClient.getInbound(inboundId);
+                if (!r.success)
+                    throw new Error(`Не удалось получить inbound #${inboundId}: ${r.msg}`);
+                inboundCache.set(inboundId, r.obj);
+                return r.obj;
+            };
             const errors = [];
             for (const inboundId of inboundIds) {
+                const inbound = await getInbound(inboundId);
+                const protocol = String(inbound?.protocol || '').toLowerCase();
+                let settingsObj = null;
+                try {
+                    settingsObj = inbound?.settings ? JSON.parse(inbound.settings) : null;
+                }
+                catch {
+                    settingsObj = null;
+                }
+                const templateClient = settingsObj?.clients?.[0] || null;
                 const clientData = {
                     ...clientDataBase,
                     email: `${emailBase}-${inboundId}@f17.com`,
                 };
-                const result = await xui_1.xuiClient.createClient(inboundId, clientData);
-                if (!result.success) {
-                    errors.push(`#${inboundId}: ${result.msg}`);
+                if (protocol === 'vless') {
+                    // flow берём из шаблона (для reality tcp часто нужен xtls-rprx-vision, для ws обычно пусто)
+                    const flow = templateClient?.flow;
+                    if (typeof flow === 'string' && flow.trim().length > 0)
+                        clientData.flow = flow;
                 }
+                else if (protocol === 'vmess') {
+                    // vmess URI требует scy; в xray это security. Если пусто — ставим auto.
+                    const sec = templateClient?.security;
+                    clientData.security = (typeof sec === 'string' && sec.trim().length > 0) ? sec : 'auto';
+                }
+                else if (protocol === 'shadowsocks') {
+                    // ss требует method/password на клиента (иначе подписка часто отдаёт невалидный ss://)
+                    const method = settingsObj?.method || templateClient?.method;
+                    if (typeof method === 'string' && method.trim().length > 0)
+                        clientData.method = method;
+                    // Для 2022-blake3-aes-256-gcm нужен ключ 32 байта (base64)
+                    clientData.password = (0, crypto_1.randomBytes)(32).toString('base64');
+                }
+                const result = await xui_1.xuiClient.createClient(inboundId, clientData);
+                if (!result.success)
+                    errors.push(`#${inboundId}: ${result.msg}`);
             }
             if (errors.length > 0) {
                 // Важно: не создаем подписку в БД, если часть inbound'ов не создалась.
@@ -391,10 +429,8 @@ class VPNBot {
             const clientId = (0, crypto_1.randomUUID)();
             const subId = (0, crypto_1.randomUUID)().replace(/-/g, '');
             const emailBase = `user${user.telegramId}-${subId}`;
-            // Создаем клиента в X-UI (один и тот же клиент во всех inbound'ах)
             const clientDataBase = {
                 id: clientId,
-                flow: 'xtls-rprx-vision',
                 // email зададим ниже (уникальный для каждого inbound)
                 limitIp: 0,
                 totalGB: 0,
@@ -408,12 +444,47 @@ class VPNBot {
             const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
                 ? config_1.config.inboundIds
                 : [config_1.config.inboundId];
+            const inboundCache = new Map();
+            const getInbound = async (inboundId) => {
+                if (inboundCache.has(inboundId))
+                    return inboundCache.get(inboundId);
+                const r = await xui_1.xuiClient.getInbound(inboundId);
+                if (!r.success)
+                    throw new Error(`Не удалось получить inbound #${inboundId}: ${r.msg}`);
+                inboundCache.set(inboundId, r.obj);
+                return r.obj;
+            };
             const errors = [];
             for (const inboundId of inboundIds) {
+                const inbound = await getInbound(inboundId);
+                const protocol = String(inbound?.protocol || '').toLowerCase();
+                let settingsObj = null;
+                try {
+                    settingsObj = inbound?.settings ? JSON.parse(inbound.settings) : null;
+                }
+                catch {
+                    settingsObj = null;
+                }
+                const templateClient = settingsObj?.clients?.[0] || null;
                 const clientData = {
                     ...clientDataBase,
                     email: `${emailBase}-${inboundId}@f17.com`,
                 };
+                if (protocol === 'vless') {
+                    const flow = templateClient?.flow;
+                    if (typeof flow === 'string' && flow.trim().length > 0)
+                        clientData.flow = flow;
+                }
+                else if (protocol === 'vmess') {
+                    const sec = templateClient?.security;
+                    clientData.security = (typeof sec === 'string' && sec.trim().length > 0) ? sec : 'auto';
+                }
+                else if (protocol === 'shadowsocks') {
+                    const method = settingsObj?.method || templateClient?.method;
+                    if (typeof method === 'string' && method.trim().length > 0)
+                        clientData.method = method;
+                    clientData.password = (0, crypto_1.randomBytes)(32).toString('base64');
+                }
                 const result = await xui_1.xuiClient.createClient(inboundId, clientData);
                 if (!result.success)
                     errors.push(`#${inboundId}: ${result.msg}`);

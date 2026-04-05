@@ -69,6 +69,27 @@ class XUIClient {
             };
         }
     }
+    async getInbound(inboundId) {
+        await this.ensureAuth();
+        try {
+            const response = await axios_1.default.get(`${this.baseURL}/panel/api/inbounds/get/${inboundId}`, {
+                headers: {
+                    'Cookie': this.sessionCookie,
+                },
+                httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
+                timeout: 10000,
+            });
+            return response.data || { success: false, msg: 'Пустой ответ', obj: null };
+        }
+        catch (error) {
+            console.error('Ошибка получения inbound X-UI:', error.message);
+            return {
+                success: false,
+                msg: error.response?.data?.msg || error.message || 'Ошибка сети',
+                obj: null,
+            };
+        }
+    }
     async deleteClient(inboundId, clientId, email) {
         await this.ensureAuth();
         try {
