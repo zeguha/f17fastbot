@@ -10,18 +10,23 @@ const config_1 = require("./config");
 class XUIClient {
     constructor() {
         this.sessionCookie = '';
-        this.baseURL = config_1.config.xui.url;
+        // Нормализуем, чтобы не получить двойной слэш в запросах: `${baseURL}/login`.
+        this.baseURL = (config_1.config.xui.url || '').replace(/\/+$/, '');
         this.username = config_1.config.xui.login;
         this.password = config_1.config.xui.password;
     }
     async login() {
         try {
-            const response = await axios_1.default.post(`${this.baseURL}/login`, {
-                username: this.username,
-                password: this.password
-            }, {
+            // В x-ui логин обычно ожидает application/x-www-form-urlencoded
+            const form = new URLSearchParams();
+            form.set('username', this.username);
+            form.set('password', this.password);
+            const response = await axios_1.default.post(`${this.baseURL}/login`, form.toString(), {
+                headers: {
+                    'Content-Type': 'application/x-www-form-urlencoded',
+                },
                 httpsAgent: new (require('https').Agent)({ rejectUnauthorized: false }),
-                timeout: 10000
+                timeout: 10000,
             });
             const setCookie = response.headers['set-cookie'];
             if (!setCookie) {
@@ -86,6 +91,12 @@ class XUIClient {
             return response.data || { success: false, msg: 'Пустой ответ', obj: null };
         }
         catch (error) {
+            // В некоторых форках/версиях x-ui endpoint delClient отсутствует (404).
+            // Тогда используем безопасный fallback через get+update inbound.settings.clients.
+            const status = error?.response?.status;
+            if (status === 404) {
+                return await this.deleteClientAlternative(inboundId, { clientId, email });
+            }
             console.error('Ошибка удаления клиента X-UI:', error.message);
             return {
                 success: false,

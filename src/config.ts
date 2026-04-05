@@ -1,4 +1,37 @@
 // src/config.ts
+function parseInboundIds(raw: string | undefined, fallback: number): number[] {
+  const source = (raw ?? '').trim();
+
+  if (!source) return [fallback];
+
+  // Поддерживаем форматы:
+  // - "46,47,48"
+  // - "46 47 48"
+  // - "46-56" (диапазон)
+  const parts = source.split(/[,\s]+/).filter(Boolean);
+  const ids: number[] = [];
+
+  for (const p of parts) {
+    const m = p.match(/^(\d+)-(\d+)$/);
+    if (m) {
+      const a = Number(m[1]);
+      const b = Number(m[2]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const from = Math.min(a, b);
+      const to = Math.max(a, b);
+      for (let i = from; i <= to; i++) ids.push(i);
+      continue;
+    }
+
+    const n = Number(p);
+    if (Number.isFinite(n)) ids.push(n);
+  }
+
+  // uniq + sort
+  const uniq = Array.from(new Set(ids)).sort((a, b) => a - b);
+  return uniq.length ? uniq : [fallback];
+}
+
 export const config = {
     // Telegram Bot
     botToken: process.env.BOT_TOKEN!,
@@ -8,7 +41,13 @@ export const config = {
     adminChatId: Number(process.env.ADMIN_CHAT_ID),
     
     // X-UI Panel
+    // Backward-compat: старое значение для 1 inbound.
     inboundId: Number(process.env.INBOUND_ID || 3),
+    // Новое: список inbound'ов для выдачи подписки.
+    // Примеры:
+    //   INBOUND_IDS=46-56
+    //   INBOUND_IDS=46,47,48
+    inboundIds: [] as number[],
     xui: {
       url: process.env.XUI_URL!,
       login: process.env.XUI_LOGIN!,
@@ -25,7 +64,7 @@ export const config = {
       offerIds: {
         '1m': process.env.LAVA_OFFER_1M!,
         '3m': process.env.LAVA_OFFER_3M!,
-        '12m': process.env.LAVA_OFFER_12M!,
+        // 12m отключён
       },
       currency: (process.env.LAVA_CURRENCY || 'RUB') as 'RUB' | 'USD' | 'EUR',
       // опционально: секрет для проверки вебхуков (если будешь принимать вебхуки)
@@ -45,8 +84,7 @@ export const config = {
     'PUBLIC_SUB_URL',
     'LAVA_API_KEY',
     'LAVA_OFFER_1M',
-    'LAVA_OFFER_3M',
-    'LAVA_OFFER_12M'
+    'LAVA_OFFER_3M'
   ];
   
   for (const env of required) {
@@ -55,9 +93,23 @@ export const config = {
     }
   }
 
+
   // Дополнительная валидация формата
   if (!Number.isFinite(config.inboundId) || config.inboundId <= 0) {
     throw new Error('INBOUND_ID должен быть положительным числом');
+  }
+
+  // Заполняем inboundIds после валидации INBOUND_ID
+  config.inboundIds = parseInboundIds(process.env.INBOUND_IDS, config.inboundId);
+
+  if (!Array.isArray(config.inboundIds) || config.inboundIds.length === 0) {
+    throw new Error('INBOUND_IDS должен содержать хотя бы один inbound id');
+  }
+
+  for (const id of config.inboundIds) {
+    if (!Number.isFinite(id) || id <= 0) {
+      throw new Error('INBOUND_IDS должен содержать только положительные числа');
+    }
   }
 
   if (!Number.isFinite(config.adminChatId) || config.adminChatId <= 0) {

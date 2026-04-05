@@ -16,7 +16,7 @@ const prisma_1 = __importDefault(require("./prisma"));
 const PLANS = [
     { code: '1m', title: '1 месяц', days: 30, price: 199, priceText: '199 ₽' },
     { code: '3m', title: '3 месяца', days: 90, price: 549, priceText: '549 ₽' },
-    { code: '12m', title: '12 месяцев', days: 365, price: 2199, priceText: '2199 ₽' }
+    // 12 месяцев отключено
 ];
 class VPNBot {
     constructor() {
@@ -113,12 +113,14 @@ class VPNBot {
             const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
             const clientId = (0, crypto_1.randomUUID)();
             const subId = (0, crypto_1.randomUUID)().replace(/-/g, '');
-            const email = `user${user.telegramId}-${subId}@f17.com`;
-            // Создаем клиента в X-UI
-            const clientData = {
+            // В некоторых форках x-ui email должен быть уникальным глобально,
+            // поэтому при мульти-inbound делаем email уникальным на каждый inbound.
+            const emailBase = `user${user.telegramId}-${subId}`;
+            // Создаем клиента в X-UI (один и тот же клиент во всех inbound'ах)
+            const clientDataBase = {
                 id: clientId,
                 flow: 'xtls-rprx-vision',
-                email: email,
+                // email зададим ниже (уникальный для каждого inbound)
                 limitIp: 0,
                 totalGB: 0,
                 expiryTime: endAt.getTime(),
@@ -128,9 +130,25 @@ class VPNBot {
                 comment: `tg:${user.telegramId} plan:${plan.name}`,
                 reset: 0
             };
-            const result = await xui_1.xuiClient.createClient(config_1.config.inboundId, clientData);
-            if (!result.success) {
-                throw new Error(`Ошибка X-UI: ${result.msg}`);
+            // Если не задан INBOUND_IDS, используем INBOUND_ID (backward compat)
+            const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
+                ? config_1.config.inboundIds
+                : [config_1.config.inboundId];
+            const errors = [];
+            for (const inboundId of inboundIds) {
+                const clientData = {
+                    ...clientDataBase,
+                    email: `${emailBase}-${inboundId}@f17.com`,
+                };
+                const result = await xui_1.xuiClient.createClient(inboundId, clientData);
+                if (!result.success) {
+                    errors.push(`#${inboundId}: ${result.msg}`);
+                }
+            }
+            if (errors.length > 0) {
+                // Важно: не создаем подписку в БД, если часть inbound'ов не создалась.
+                // Иначе будет рассинхрон, а удаление станет неоднозначным.
+                throw new Error(`Ошибка X-UI (не все inbound'ы создались): ${errors.join(' | ')}`);
             }
             // Сохраняем подписку в базе
             await prisma_1.default.subscription.create({
@@ -142,7 +160,8 @@ class VPNBot {
                     endAt: endAt,
                     xuiClientId: clientId,
                     subId,
-                    xuiEmail: email,
+                    // Сохраняем базовый email (реальный email в inbound'ах может отличаться)
+                    xuiEmail: `${emailBase}-${inboundIds[0]}@f17.com`,
                 }
             });
             // Отправляем сообщение пользователю
@@ -360,7 +379,7 @@ class VPNBot {
             }
             const text = ctx.message?.text;
             const arg = text?.split(/\s+/).slice(1)[0]?.trim();
-            const planCode = (arg && ['1m', '3m', '12m'].includes(arg) ? arg : '1m');
+            const planCode = (arg && ['1m', '3m'].includes(arg) ? arg : '1m');
             const plan = await this.getPlan(planCode);
             if (!plan) {
                 await ctx.reply('План не найден в базе данных.');
@@ -371,12 +390,12 @@ class VPNBot {
             const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
             const clientId = (0, crypto_1.randomUUID)();
             const subId = (0, crypto_1.randomUUID)().replace(/-/g, '');
-            const email = `user${user.telegramId}-${subId}@f17.com`;
-            // Создаем клиента в X-UI
-            const clientData = {
+            const emailBase = `user${user.telegramId}-${subId}`;
+            // Создаем клиента в X-UI (один и тот же клиент во всех inbound'ах)
+            const clientDataBase = {
                 id: clientId,
                 flow: 'xtls-rprx-vision',
-                email,
+                // email зададим ниже (уникальный для каждого inbound)
                 limitIp: 0,
                 totalGB: 0,
                 expiryTime: endAt.getTime(),
@@ -386,9 +405,21 @@ class VPNBot {
                 comment: `TEST tg:${user.telegramId} plan:${plan.name}`,
                 reset: 0,
             };
-            const result = await xui_1.xuiClient.createClient(config_1.config.inboundId, clientData);
-            if (!result.success) {
-                await ctx.reply(`❌ Не удалось создать клиента в X-UI: ${result.msg}`);
+            const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
+                ? config_1.config.inboundIds
+                : [config_1.config.inboundId];
+            const errors = [];
+            for (const inboundId of inboundIds) {
+                const clientData = {
+                    ...clientDataBase,
+                    email: `${emailBase}-${inboundId}@f17.com`,
+                };
+                const result = await xui_1.xuiClient.createClient(inboundId, clientData);
+                if (!result.success)
+                    errors.push(`#${inboundId}: ${result.msg}`);
+            }
+            if (errors.length > 0) {
+                await ctx.reply(`❌ Не удалось создать клиента в X-UI (не все inbound'ы): ${errors.join(' | ')}`);
                 return;
             }
             const createdSub = await prisma_1.default.subscription.create({
@@ -400,7 +431,7 @@ class VPNBot {
                     endAt,
                     xuiClientId: clientId,
                     subId,
-                    xuiEmail: email,
+                    xuiEmail: `${emailBase}-${inboundIds[0]}@f17.com`,
                 },
             });
             const subLink = `${config_1.config.publicSubUrl}/sub/${subId}`;
@@ -572,17 +603,26 @@ class VPNBot {
                     return;
                 }
                 if (subscription.xuiClientId) {
-                    const deleteResult = await xui_1.xuiClient.deleteClient(config_1.config.inboundId, subscription.xuiClientId, subscription.xuiEmail || `user${tgId}@f17.com`);
-                    if (!deleteResult.success) {
-                        const altResult = await xui_1.xuiClient.deleteClientAlternative(config_1.config.inboundId, {
-                            clientId: subscription.xuiClientId,
-                            email: subscription.xuiEmail || undefined,
-                            subId: subscription.subId || undefined,
-                            // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
-                        });
-                        if (!altResult.success) {
-                            throw new Error('Не удалось удалить клиента из X-UI');
+                    const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
+                        ? config_1.config.inboundIds
+                        : [config_1.config.inboundId];
+                    const errors = [];
+                    for (const inboundId of inboundIds) {
+                        const deleteResult = await xui_1.xuiClient.deleteClient(inboundId, subscription.xuiClientId, subscription.xuiEmail || `user${tgId}@f17.com`);
+                        if (!deleteResult.success) {
+                            const altResult = await xui_1.xuiClient.deleteClientAlternative(inboundId, {
+                                clientId: subscription.xuiClientId,
+                                email: subscription.xuiEmail || undefined,
+                                subId: subscription.subId || undefined,
+                                // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
+                            });
+                            if (!altResult.success) {
+                                errors.push(`#${inboundId}: ${altResult.msg || deleteResult.msg || 'unknown'}`);
+                            }
                         }
+                    }
+                    if (errors.length > 0) {
+                        throw new Error(`Не удалось удалить клиента из X-UI во всех inbound'ах: ${errors.join(' | ')}`);
                     }
                 }
                 await prisma_1.default.subscription.update({
@@ -802,20 +842,26 @@ class VPNBot {
                 // Backward-compat: отменяем «последнюю» активную, если старый callback вызван
                 const subscription = await this.getActiveSubscription(tgId);
                 if (subscription && subscription.xuiClientId) {
-                    // Удаляем клиента из X-UI
-                    const deleteResult = await xui_1.xuiClient.deleteClient(config_1.config.inboundId, subscription.xuiClientId, subscription.xuiEmail || `user${tgId}@f17.com`);
-                    if (!deleteResult.success) {
-                        // Fallback: удаление через обновление inbound.settings.clients
-                        const altResult = await xui_1.xuiClient.deleteClientAlternative(config_1.config.inboundId, {
-                            clientId: subscription.xuiClientId,
-                            email: subscription.xuiEmail || undefined,
-                            // subId может быть полезен для поиска, если clientId/email не совпали
-                            subId: subscription.subId || undefined,
-                            // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
-                        });
-                        if (!altResult.success) {
-                            throw new Error('Не удалось удалить клиента из X-UI');
+                    const inboundIds = (config_1.config.inboundIds && config_1.config.inboundIds.length > 0)
+                        ? config_1.config.inboundIds
+                        : [config_1.config.inboundId];
+                    const errors = [];
+                    for (const inboundId of inboundIds) {
+                        const deleteResult = await xui_1.xuiClient.deleteClient(inboundId, subscription.xuiClientId, subscription.xuiEmail || `user${tgId}@f17.com`);
+                        if (!deleteResult.success) {
+                            const altResult = await xui_1.xuiClient.deleteClientAlternative(inboundId, {
+                                clientId: subscription.xuiClientId,
+                                email: subscription.xuiEmail || undefined,
+                                subId: subscription.subId || undefined,
+                                // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
+                            });
+                            if (!altResult.success) {
+                                errors.push(`#${inboundId}: ${altResult.msg || deleteResult.msg || 'unknown'}`);
+                            }
                         }
+                    }
+                    if (errors.length > 0) {
+                        throw new Error(`Не удалось удалить клиента из X-UI во всех inbound'ах: ${errors.join(' | ')}`);
                     }
                 }
                 // Обновляем статус подписки (только одной)
