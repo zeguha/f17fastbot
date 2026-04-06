@@ -356,6 +356,7 @@ class VPNBot {
         if (tgId) {
             buttons.push([telegraf_1.Markup.button.callback('📋 Мои подписки', 'menu:mysub')]);
         }
+        buttons.push([telegraf_1.Markup.button.callback('❓ FAQ', 'menu:faq')]);
         // Поддержка доступна всем
         buttons.push([telegraf_1.Markup.button.callback('🆘 Поддержка', 'menu:support')]);
         return telegraf_1.Markup.inlineKeyboard(buttons);
@@ -374,6 +375,31 @@ class VPNBot {
             [telegraf_1.Markup.button.callback('« В главное меню', 'menu:back')],
         ]);
     }
+    faqText() {
+        return (`<b>FAQ</b> — ответы на частые вопросы\n\n` +
+            `<b>1) Как подключиться?</b>\n` +
+            `Открой ссылку подписки в приложении-клиенте (например: v2rayNG, Hiddify, v2rayN). ` +
+            `Обычно ссылка сама предложит импорт.\n\n` +
+            `<b>2) Где моя ссылка подписки?</b>\n` +
+            `Нажми «📋 Мои подписки» в меню или отправь команду /mysub.\n\n` +
+            `<b>3) Сколько устройств можно подключить?</b>\n` +
+            `Можно подключить несколько устройств, но не передавай ссылку третьим лицам — доступ могут заблокировать.\n\n` +
+            `<b>4) Ссылка открывается, но интернет не работает</b>\n` +
+            `Проверь: включён ли VPN в приложении, правильные дата/время на телефоне, не включён ли режим экономии трафика/энергии. ` +
+            `Иногда помогает переимпорт подписки (обновить/пересканировать) и перезапуск приложения.\n\n` +
+            `<b>5) Что делать, если скорость низкая?</b>\n` +
+            `Попробуй обновить подписку в клиенте и переключить один из конфигов. ` +
+            `Скорость может зависеть от провайдера/страны/времени суток.\n\n` +
+            `<b>6) Оплата не проходит / не пришла подписка</b>\n` +
+            `Подожди 1–2 минуты и нажми «Проверить оплату». Если не помогло — напиши в поддержку.\n\n` +
+            `<b>7) Как связаться с поддержкой?</b>\n` +
+            `Нажми «🆘 Поддержка» в меню и опиши проблему одним сообщением (желательно со скриншотом).`);
+    }
+    faqKeyboard() {
+        return telegraf_1.Markup.inlineKeyboard([
+            [telegraf_1.Markup.button.callback('« В главное меню', 'menu:back')],
+        ]);
+    }
     setupHandlers() {
         // Команда /start
         this.bot.start(async (ctx) => {
@@ -384,12 +410,21 @@ class VPNBot {
             }
             await ctx.reply(`Привет, ${name}! 👋\n\n` +
                 `Я помогу тебе настроить доступ к ускорителю интернета.\n` +
-                `Выбери подписку и оплати картой РФ.`, this.mainMenuKeyboard(tgId));
+                `Выбери подписку и оплати картой РФ.\n` +
+                `Поддержка @f17support\n` +
+                `Канал с обновлениями @f17fastnews`, this.mainMenuKeyboard(tgId));
         });
         // Команда /subscribe
         this.bot.command('subscribe', async (ctx) => {
             const tgId = ctx.from?.id;
             await ctx.reply('Выбери план подписки:', this.plansKeyboard());
+        });
+        // Команда /faq
+        this.bot.command('faq', async (ctx) => {
+            await ctx.reply(this.faqText(), {
+                parse_mode: 'HTML',
+                ...this.faqKeyboard(),
+            });
         });
         // Команда /cancel — выход из режима обращения
         this.bot.command('cancel', async (ctx) => {
@@ -553,6 +588,14 @@ class VPNBot {
         this.bot.action('menu:subscribe', async (ctx) => {
             await ctx.answerCbQuery();
             await this.safeEditOrReply(ctx, 'Выбери план подписки:', this.plansKeyboard());
+        });
+        // Кнопка "FAQ"
+        this.bot.action('menu:faq', async (ctx) => {
+            await ctx.answerCbQuery();
+            await this.safeEditOrReply(ctx, this.faqText(), {
+                parse_mode: 'HTML',
+                ...this.faqKeyboard(),
+            });
         });
         // Кнопка "Моя подписка"
         this.bot.action('menu:mysub', async (ctx) => {
