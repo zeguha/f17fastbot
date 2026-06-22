@@ -1,4 +1,3 @@
-// scripts/check-prisma.ts
 import { PrismaClient } from '@prisma/client';
 
 async function checkPrisma() {
@@ -7,7 +6,6 @@ async function checkPrisma() {
   try {
     console.log('Проверка подключения к базе данных...');
     
-    // Проверяем, можем ли мы получить данные
     const plans = await prisma.plan.findMany();
     console.log(`Найдено планов: ${plans.length}`);
     

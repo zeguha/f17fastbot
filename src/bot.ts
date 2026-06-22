@@ -1,12 +1,9 @@
-// src/bot.ts
 import { Telegraf, Markup, Context } from 'telegraf';
 import { randomUUID, randomBytes } from 'crypto';
 import 'dotenv/config';
 import { config } from './config';
 import { xuiClient } from './xui';
 import { lavaClient } from './lava';
-
-// Prisma singleton (важно для dev hot-reload и для единообразия по проекту)
 import prisma from './prisma';
 
 interface PlanData {
@@ -20,13 +17,11 @@ interface PlanData {
 const PLANS: PlanData[] = [
   { code: '1m', title: '1 месяц', days: 30, price: 199, priceText: '199 ₽' },
   { code: '3m', title: '3 месяца', days: 90, price: 549, priceText: '549 ₽' },
-  // 12 месяцев отключено
 ];
 
 class VPNBot {
   private bot: Telegraf;
   private paymentCheckInterval?: NodeJS.Timeout;
-  // Простое состояние для режима "обращение в поддержку"
   private supportMode = new Set<number>();
 
   constructor() {
@@ -43,7 +38,6 @@ class VPNBot {
     try {
       console.log('Инициализация базы данных...');
       
-      // Создаем планы в базе данных, если их нет
       for (const plan of PLANS) {
         const existingPlan = await prisma.plan.findFirst({
           where: { name: plan.code }
@@ -67,7 +61,6 @@ class VPNBot {
   }
 
   private startPaymentChecker() {
-    // Проверяем платежи каждые 30 секунд
     this.paymentCheckInterval = setInterval(async () => {
       await this.checkPendingPayments();
     }, 30000);
@@ -79,7 +72,7 @@ class VPNBot {
         where: {
           status: 'pending',
           createdAt: {
-            gt: new Date(Date.now() - 24 * 60 * 60 * 1000) // последние 24 часа
+            gt: new Date(Date.now() - 24 * 60 * 60 * 1000)
           }
         },
         include: {
@@ -114,7 +107,6 @@ class VPNBot {
       const user = payment.user;
       const plan = payment.plan;
 
-      // Обновляем статус платежа
       await prisma.payment.update({
         where: { id: payment.id },
         data: { 
@@ -123,20 +115,14 @@ class VPNBot {
         }
       });
 
-      // Создаем новую подписку
       const now = new Date();
       const endAt = new Date(now.getTime() + plan.duration * 24 * 60 * 60 * 1000);
       const clientId = randomUUID();
       const subId = randomUUID().replace(/-/g, '');
-      // В некоторых форках x-ui email должен быть уникальным глобально,
-      // поэтому при мульти-inbound делаем email уникальным на каждый inbound.
       const emailBase = `user${user.telegramId}-${subId}`;
 
-      // Создаем клиента в X-UI (один и тот же clientId/subId во всех inbound'ах).
-      // ВАЖНО: для разных протоколов нужны разные поля (например, vmess->security, ss->method/password).
       const clientDataBase: Record<string, any> = {
         id: clientId,
-        // email зададим ниже (уникальный для каждого inbound)
         limitIp: 0,
         totalGB: 0,
         expiryTime: endAt.getTime(),
@@ -147,7 +133,6 @@ class VPNBot {
         reset: 0,
       };
 
-      // Если не задан INBOUND_IDS, используем INBOUND_ID (backward compat)
       const inboundIds = (config.inboundIds && config.inboundIds.length > 0)
         ? config.inboundIds
         : [config.inboundId];
@@ -176,22 +161,18 @@ class VPNBot {
 
         const clientData: Record<string, any> = {
           ...clientDataBase,
-          email: `${emailBase}-${inboundId}@f17.com`,
+          email: `${emailBase}-${inboundId}@${config.clientEmailDomain}`,
         };
 
         if (protocol === 'vless') {
-          // flow берём из шаблона (для reality tcp часто нужен xtls-rprx-vision, для ws обычно пусто)
           const flow = templateClient?.flow;
           if (typeof flow === 'string' && flow.trim().length > 0) clientData.flow = flow;
         } else if (protocol === 'vmess') {
-          // vmess URI требует scy; в xray это security. Если пусто — ставим auto.
           const sec = templateClient?.security;
           clientData.security = (typeof sec === 'string' && sec.trim().length > 0) ? sec : 'auto';
         } else if (protocol === 'shadowsocks') {
-          // ss требует method/password на клиента (иначе подписка часто отдаёт невалидный ss://)
           const method = settingsObj?.method || templateClient?.method;
           if (typeof method === 'string' && method.trim().length > 0) clientData.method = method;
-          // Для 2022-blake3-aes-256-gcm нужен ключ 32 байта (base64)
           clientData.password = randomBytes(32).toString('base64');
         }
 
@@ -200,12 +181,9 @@ class VPNBot {
       }
 
       if (errors.length > 0) {
-        // Важно: не создаем подписку в БД, если часть inbound'ов не создалась.
-        // Иначе будет рассинхрон, а удаление станет неоднозначным.
         throw new Error(`Ошибка X-UI (не все inbound'ы создались): ${errors.join(' | ')}`);
       }
 
-      // Сохраняем подписку в базе
       await prisma.subscription.create({
         data: {
           userId: user.id,
@@ -215,12 +193,10 @@ class VPNBot {
           endAt: endAt,
           xuiClientId: clientId,
           subId,
-          // Сохраняем базовый email (реальный email в inbound'ах может отличаться)
-          xuiEmail: `${emailBase}-${inboundIds[0]}@f17.com`,
+          xuiEmail: `${emailBase}-${inboundIds[0]}@${config.clientEmailDomain}`,
         }
       });
 
-      // Отправляем сообщение пользователю
       const subLink = `${config.publicSubUrl}/sub/${subId}`;
       await this.bot.telegram.sendMessage(
         Number(user.telegramId),
@@ -298,8 +274,6 @@ class VPNBot {
   }
 
   private isAdmin(tgId: number): boolean {
-    // Безопасность: тестовые команды должны быть доступны только админам.
-    // Формат: ADMIN_TG_IDS=123,456
     const raw = process.env.ADMIN_TG_IDS;
     if (raw && raw.trim().length > 0) {
       const set = new Set(
@@ -311,8 +285,6 @@ class VPNBot {
       return set.has(String(tgId));
     }
 
-    // Для локальной разработки можно временно включить без списка админов
-    // ALLOW_TESTSUB=1
     if (process.env.ALLOW_TESTSUB === '1') return true;
 
     return false;
@@ -401,7 +373,6 @@ class VPNBot {
 
     buttons.push([Markup.button.callback('❓ FAQ', 'menu:faq')]);
 
-    // Поддержка доступна всем
     buttons.push([Markup.button.callback('🆘 Поддержка', 'menu:support')]);
     
     return Markup.inlineKeyboard(buttons);
@@ -453,10 +424,11 @@ class VPNBot {
   }
 
   private setupHandlers() {
-    // Команда /start
     this.bot.start(async (ctx) => {
       const name = ctx.from?.first_name || 'друг';
       const tgId = ctx.from?.id;
+      const supportLine = config.supportUsername ? `Поддержка @${config.supportUsername.replace(/^@/, '')}\n` : '';
+      const newsLine = config.newsChannelUsername ? `Канал с обновлениями @${config.newsChannelUsername.replace(/^@/, '')}` : '';
       
       if (tgId) {
         await this.getOrCreateUser(tgId, ctx.from?.username);
@@ -466,19 +438,16 @@ class VPNBot {
         `Привет, ${name}! 👋\n\n` +
         `Я помогу тебе настроить доступ к ускорителю интернета.\n` +
         `Выбери подписку и оплати картой РФ.\n` +
-        `Поддержка @f17support\n` +
-        `Канал с обновлениями @f17fastnews`,
+        supportLine +
+        newsLine,
         this.mainMenuKeyboard(tgId)
       );
     });
 
-    // Команда /subscribe
     this.bot.command('subscribe', async (ctx) => {
-      const tgId = ctx.from?.id;
       await ctx.reply('Выбери план подписки:', this.plansKeyboard());
     });
 
-    // Команда /faq
     this.bot.command('faq', async (ctx) => {
       await ctx.reply(this.faqText(), {
         parse_mode: 'HTML',
@@ -486,7 +455,6 @@ class VPNBot {
       });
     });
 
-    // Команда /cancel — выход из режима обращения
     this.bot.command('cancel', async (ctx) => {
       const tgId = ctx.from?.id;
       if (!tgId) return;
@@ -500,8 +468,6 @@ class VPNBot {
       await ctx.reply('❌ Обращение отменено. Возвращаю в главное меню.', this.mainMenuKeyboard(tgId));
     });
 
-    // Админ-команда: выдать себе тестовую подписку без оплаты
-    // Использование: /testsub [1m|3m|12m]
     this.bot.command('testsub', async (ctx) => {
       const tgId = ctx.from?.id;
       if (!tgId) {
@@ -518,8 +484,7 @@ class VPNBot {
       const arg = text?.split(/\s+/).slice(1)[0]?.trim();
       const planCode = (arg && ['1m', '3m'].includes(arg) ? arg : '1m') as
         | '1m'
-        | '3m'
-        ;
+        | '3m';
 
       const plan = await this.getPlan(planCode);
       if (!plan) {
@@ -536,7 +501,6 @@ class VPNBot {
 
       const clientDataBase: Record<string, any> = {
         id: clientId,
-        // email зададим ниже (уникальный для каждого inbound)
         limitIp: 0,
         totalGB: 0,
         expiryTime: endAt.getTime(),
@@ -575,7 +539,7 @@ class VPNBot {
 
         const clientData: Record<string, any> = {
           ...clientDataBase,
-          email: `${emailBase}-${inboundId}@f17.com`,
+          email: `${emailBase}-${inboundId}@${config.clientEmailDomain}`,
         };
 
         if (protocol === 'vless') {
@@ -608,7 +572,7 @@ class VPNBot {
           endAt,
           xuiClientId: clientId,
           subId,
-          xuiEmail: `${emailBase}-${inboundIds[0]}@f17.com`,
+          xuiEmail: `${emailBase}-${inboundIds[0]}@${config.clientEmailDomain}`,
         },
       });
 
@@ -626,7 +590,6 @@ class VPNBot {
       );
     });
 
-    // Команда /mysub
     this.bot.command('mysub', async (ctx) => {
       const tgId = ctx.from?.id;
       
@@ -677,13 +640,11 @@ class VPNBot {
       );
     });
 
-    // Кнопка "Купить подписку"
     this.bot.action('menu:subscribe', async (ctx) => {
       await ctx.answerCbQuery();
       await this.safeEditOrReply(ctx, 'Выбери план подписки:', this.plansKeyboard());
     });
 
-    // Кнопка "FAQ"
     this.bot.action('menu:faq', async (ctx) => {
       await ctx.answerCbQuery();
       await this.safeEditOrReply(ctx, this.faqText(), {
@@ -692,7 +653,6 @@ class VPNBot {
       });
     });
 
-    // Кнопка "Моя подписка"
     this.bot.action('menu:mysub', async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -747,7 +707,6 @@ class VPNBot {
       );
     });
 
-    // Открыть конкретную подписку из списка
     this.bot.action(/^sub:open:(\d+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -790,7 +749,6 @@ class VPNBot {
       );
     });
 
-    // Запрос отмены конкретной подписки
     this.bot.action(/^sub:cancelsub:(\d+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -826,7 +784,6 @@ class VPNBot {
       );
     });
 
-    // Подтверждение отмены конкретной подписки
     this.bot.action(/^sub:confirmcancel:(\d+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -859,7 +816,7 @@ class VPNBot {
             const deleteResult = await xuiClient.deleteClient(
               inboundId,
               subscription.xuiClientId,
-              subscription.xuiEmail || `user${tgId}@f17.com`
+              subscription.xuiEmail || `user${tgId}@${config.clientEmailDomain}`
             );
 
             if (!deleteResult.success) {
@@ -867,7 +824,6 @@ class VPNBot {
                 clientId: subscription.xuiClientId,
                 email: subscription.xuiEmail || undefined,
                 subId: subscription.subId || undefined,
-                // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
               });
 
               if (!altResult.success) {
@@ -899,14 +855,12 @@ class VPNBot {
       }
     });
 
-    // Кнопка "Назад"
     this.bot.action('menu:back', async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
       await this.safeEditOrReply(ctx, 'Главное меню', this.mainMenuKeyboard(tgId));
     });
 
-    // Кнопка "Поддержка"
     this.bot.action('menu:support', async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -923,13 +877,11 @@ class VPNBot {
       );
     });
 
-    // Прием сообщений в режиме поддержки
     this.bot.on('message', async (ctx) => {
       const tgId = ctx.from?.id;
       if (!tgId) return;
       if (!this.supportMode.has(tgId)) return;
 
-      // Защита: команды в режиме поддержки (кроме /cancel)
       const msg: any = ctx.message;
       const maybeText = typeof msg?.text === 'string' ? msg.text : undefined;
       if (maybeText && maybeText.startsWith('/') && maybeText !== '/cancel') {
@@ -937,7 +889,6 @@ class VPNBot {
         return;
       }
 
-      // Разрешаем только текст
       if (!maybeText) {
         await ctx.reply('Пожалуйста, отправьте именно текстовое сообщение. Чтобы выйти — /cancel.');
         return;
@@ -968,7 +919,6 @@ class VPNBot {
           '❌ Не удалось отправить сообщение в поддержку. Попробуйте позже.',
           this.mainMenuKeyboard(tgId)
         );
-        // остаемся в режиме поддержки, чтобы пользователь мог попробовать снова
         return;
       }
 
@@ -976,7 +926,6 @@ class VPNBot {
       await ctx.reply('✅ Сообщение отправлено в поддержку. Возвращаю в главное меню.', this.mainMenuKeyboard(tgId));
     });
 
-    // Выбор плана
     this.bot.action(/^plan:(.+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -1002,16 +951,12 @@ class VPNBot {
         return;
       }
 
-      // Создаем уникальный orderId
       const orderId = `order_${tgId}_${Date.now()}_${randomUUID().slice(0, 8)}`;
 
       try {
-        // Создаем счет в Lava Public API (gate.lava.top)
-        // Email обязателен для Lava, используем технический адрес по tgId.
-        const buyerEmail = `tg${tgId}@f17.com`;
+        const buyerEmail = `tg${tgId}@${config.technicalEmailDomain}`;
         const invoiceResponse = await lavaClient.createInvoice(planCode, buyerEmail);
 
-        // Сохраняем платеж в БД
         await prisma.payment.create({
           data: {
             userId: user.id,
@@ -1050,7 +995,6 @@ class VPNBot {
       }
     });
 
-    // Проверка оплаты
     this.bot.action(/^checkpay:(.+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -1113,7 +1057,6 @@ class VPNBot {
       }
     });
 
-    // Отмена подписки
     this.bot.action('menu:cancelsub', async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = ctx.from?.id;
@@ -1123,7 +1066,6 @@ class VPNBot {
         return;
       }
 
-      // Backward-compat: если где-то осталась старая кнопка, перенаправляем
       const subs = await this.getActiveSubscriptions(tgId);
       if (!subs.length) {
         await this.safeEditOrReply(ctx, 'У тебя нет активной подписки.', this.mainMenuKeyboard(tgId));
@@ -1145,7 +1087,6 @@ class VPNBot {
       );
     });
 
-    // Подтверждение отмены
     this.bot.action(/^confirmcancelsub:(\d+)$/, async (ctx) => {
       await ctx.answerCbQuery();
       const tgId = Number(ctx.match[1]);
@@ -1155,7 +1096,6 @@ class VPNBot {
       await ctx.editMessageText('Отменяю подписку...');
       
       try {
-        // Backward-compat: отменяем «последнюю» активную, если старый callback вызван
         const subscription = await this.getActiveSubscription(tgId);
         
         if (subscription && subscription.xuiClientId) {
@@ -1168,7 +1108,7 @@ class VPNBot {
             const deleteResult = await xuiClient.deleteClient(
               inboundId,
               subscription.xuiClientId,
-              subscription.xuiEmail || `user${tgId}@f17.com`
+              subscription.xuiEmail || `user${tgId}@${config.clientEmailDomain}`
             );
 
             if (!deleteResult.success) {
@@ -1176,7 +1116,6 @@ class VPNBot {
                 clientId: subscription.xuiClientId,
                 email: subscription.xuiEmail || undefined,
                 subId: subscription.subId || undefined,
-                // ВАЖНО: tgId не передаем, иначе можно удалить ВСЕ устройства пользователя.
               });
 
               if (!altResult.success) {
@@ -1190,7 +1129,6 @@ class VPNBot {
           }
         }
 
-        // Обновляем статус подписки (только одной)
         if (subscription) {
           await prisma.subscription.update({
             where: { id: subscription.id },
@@ -1213,7 +1151,6 @@ class VPNBot {
       }
     });
 
-    // Обработка ошибок
     this.bot.catch((error: any, ctx: Context) => {
       console.error(`Ошибка для ${ctx.updateType}:`, error);
       const tgId = ctx.from?.id;
@@ -1246,7 +1183,6 @@ class VPNBot {
     
     this.bot.stop(reason);
 
-    // Закрываем соединение с БД (не блокируем shutdown)
     prisma.$disconnect().catch((e: unknown) => console.error('Ошибка закрытия Prisma:', e));
   }
 }

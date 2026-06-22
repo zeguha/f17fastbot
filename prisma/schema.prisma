@@ -5,7 +5,6 @@ datasource db {
 
 generator client {
   provider = "prisma-client-js"
-  // Чтобы Prisma Client работал и на macOS Apple Silicon (dev), и на Linux (prod)
   binaryTargets = ["native", "darwin-arm64", "debian-openssl-3.0.x"]
 }
 
@@ -24,7 +23,7 @@ model Plan {
   id       Int    @id @default(autoincrement())
   name     String @unique
   price    Int
-  duration Int // days
+  duration Int
 
   subscriptions Subscription[]
   payments      Payment[]
@@ -38,9 +37,7 @@ model Subscription {
   startAt     DateTime @default(now())
   endAt       DateTime
   xuiClientId String?
-  /// subId, который выдается пользователю как часть ссылки /sub/{subId}
   subId       String?  @unique
-  /// email клиента в X-UI (нужен для корректного удаления)
   xuiEmail    String?
 
   user User @relation(fields: [userId], references: [id])

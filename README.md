@@ -1,93 +1,189 @@
-# F17vpnbot
+# VPN Bot
 
+Telegram-бот для продажи и выдачи VPN-подписок. Проект связывает Telegram, панель X-UI, базу данных SQLite через Prisma и платежи Lava.Top.
 
+## Возможности
 
-## Getting started
+- регистрация пользователей Telegram при первом запуске бота;
+- меню покупки подписки на 1 или 3 месяца;
+- создание счетов Lava.Top и ручная проверка оплаты кнопкой в боте;
+- автоматическая проверка ожидающих платежей каждые 30 секунд;
+- создание клиента в одном или нескольких inbound X-UI;
+- выдача пользователю subscription-ссылки;
+- просмотр активных подписок;
+- отмена подписки с удалением клиента из X-UI;
+- обращение пользователя в поддержку через бота;
+- админская команда для выдачи тестовой подписки без оплаты.
 
-To make it easy for you to get started with GitLab, here's a list of recommended next steps.
+## Структура проекта
 
-Already a pro? Just edit this README.md and make it your own. Want to make it easy? [Use the template at the bottom](#editing-this-readme)!
-
-## Add your files
-
-* [Create](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#create-a-file) or [upload](https://docs.gitlab.com/ee/user/project/repository/web_editor.html#upload-a-file) files
-* [Add files using the command line](https://docs.gitlab.com/topics/git/add_files/#add-files-to-a-git-repository) or push an existing Git repository with the following command:
-
+```text
+.
+├── prisma/
+│   └── schema.prisma
+├── scripts/
+│   ├── check-prisma.ts
+│   ├── seed.ts
+│   └── setup.ts
+├── src/
+│   ├── bot.ts
+│   ├── config.ts
+│   ├── lava.ts
+│   ├── main.ts
+│   ├── prisma.ts
+│   └── xui.ts
+├── .env.example
+├── .gitignore
+├── package.json
+├── pnpm-lock.yaml
+├── README.md
+└── tsconfig.json
 ```
-cd existing_repo
-git remote add origin https://gitlab.com/407-projects/f17vpnbot.git
-git branch -M main
-git push -uf origin main
+
+## Требования
+
+- Node.js 20 или новее;
+- pnpm 10 или новее;
+- доступная панель X-UI;
+- бот Telegram, созданный через BotFather;
+- аккаунт Lava.Top с API-ключом и offerId для тарифов;
+- публичный URL, по которому пользователи открывают subscription-ссылки X-UI.
+
+## Установка
+
+```bash
+pnpm install
+cp .env.example .env
 ```
 
-## Integrate with your tools
+После копирования заполните `.env` реальными значениями. Файл `.env` не должен попадать в Git.
 
-* [Set up project integrations](https://gitlab.com/407-projects/f17vpnbot/-/settings/integrations)
+## Настройка окружения
 
-## Collaborate with your team
+Основные переменные:
 
-* [Invite team members and collaborators](https://docs.gitlab.com/ee/user/project/members/)
-* [Create a new merge request](https://docs.gitlab.com/ee/user/project/merge_requests/creating_merge_requests.html)
-* [Automatically close issues from merge requests](https://docs.gitlab.com/ee/user/project/issues/managing_issues.html#closing-issues-automatically)
-* [Enable merge request approvals](https://docs.gitlab.com/ee/user/project/merge_requests/approvals/)
-* [Set auto-merge](https://docs.gitlab.com/user/project/merge_requests/auto_merge/)
+| Переменная | Назначение |
+| --- | --- |
+| `BOT_TOKEN` | токен Telegram-бота |
+| `DATABASE_URL` | путь к SQLite базе Prisma |
+| `ADMIN_CHAT_ID` | Telegram chat_id администратора для обращений |
+| `ADMIN_TG_IDS` | список Telegram ID администраторов через запятую |
+| `ALLOW_TESTSUB` | разрешение тестовой команды без списка админов, `0` или `1` |
+| `XUI_URL` | URL панели X-UI |
+| `XUI_LOGIN` | логин X-UI |
+| `XUI_PASSWORD` | пароль X-UI |
+| `INBOUND_ID` | основной inbound X-UI |
+| `INBOUND_IDS` | список или диапазон inbound, например `3`, `3,4,5` или `3-5` |
+| `PUBLIC_SUB_URL` | публичный URL subscription-сервиса X-UI |
+| `SUPPORT_USERNAME` | username поддержки без обязательного символа `@` |
+| `NEWS_CHANNEL_USERNAME` | username канала новостей без обязательного символа `@` |
+| `CLIENT_EMAIL_DOMAIN` | технический домен email клиентов в X-UI |
+| `TECHNICAL_EMAIL_DOMAIN` | технический домен email покупателя для Lava.Top |
+| `LAVA_API_KEY` | API-ключ Lava.Top |
+| `LAVA_PUBLIC_BASE_URL` | base URL Lava.Top Public API |
+| `LAVA_WEBHOOK_SECRET_KEY` | секрет вебхуков Lava.Top, если используется |
+| `LAVA_OFFER_1M` | offerId тарифа на 1 месяц |
+| `LAVA_OFFER_3M` | offerId тарифа на 3 месяца |
+| `LAVA_CURRENCY` | валюта платежей: `RUB`, `USD` или `EUR` |
 
-## Test and Deploy
+Безопасный пример находится в `.env.example`. В нем нет реальных токенов, паролей и ключей.
 
-Use the built-in continuous integration in GitLab.
+## База данных
 
-* [Get started with GitLab CI/CD](https://docs.gitlab.com/ee/ci/quick_start/)
-* [Analyze your code for known vulnerabilities with Static Application Security Testing (SAST)](https://docs.gitlab.com/ee/user/application_security/sast/)
-* [Deploy to Kubernetes, Amazon EC2, or Amazon ECS using Auto Deploy](https://docs.gitlab.com/ee/topics/autodevops/requirements.html)
-* [Use pull-based deployments for improved Kubernetes management](https://docs.gitlab.com/ee/user/clusters/agent/)
-* [Set up protected environments](https://docs.gitlab.com/ee/ci/environments/protected_environments.html)
+Проект использует SQLite и Prisma.
 
-***
+Сгенерировать клиент Prisma:
 
-# Editing this README
+```bash
+pnpm run prisma:generate
+```
 
-When you're ready to make this README your own, just edit this file and use the handy template below (or feel free to structure it however you want - this is just a starting point!). Thanks to [makeareadme.com](https://www.makeareadme.com/) for this template.
+Применить миграции в режиме разработки:
 
-## Suggestions for a good README
+```bash
+pnpm run prisma:migrate
+```
 
-Every project is different, so consider which of these sections apply to yours. The sections used in the template are suggestions for most open source projects. Also keep in mind that while a README can be too long and detailed, too long is better than too short. If you think your README is too long, consider utilizing another form of documentation rather than cutting out information.
+Заполнить стартовые тарифы:
 
-## Name
-Choose a self-explaining name for your project.
+```bash
+pnpm run seed
+```
 
-## Description
-Let people know what your project can do specifically. Provide context and add a link to any reference visitors might be unfamiliar with. A list of Features or a Background subsection can also be added here. If there are alternatives to your project, this is a good place to list differentiating factors.
+Проверить подключение и таблицы:
 
-## Badges
-On some READMEs, you may see small images that convey metadata, such as whether or not all the tests are passing for the project. You can use Shields to add some to your README. Many services also have instructions for adding a badge.
+```bash
+pnpm run prisma:check
+```
 
-## Visuals
-Depending on what you are making, it can be a good idea to include screenshots or even a video (you'll frequently see GIFs rather than actual videos). Tools like ttygif can help, but check out Asciinema for a more sophisticated method.
+Полная первичная настройка:
 
-## Installation
-Within a particular ecosystem, there may be a common way of installing things, such as using Yarn, NuGet, or Homebrew. However, consider the possibility that whoever is reading your README is a novice and would like more guidance. Listing specific steps helps remove ambiguity and gets people to using your project as quickly as possible. If it only runs in a specific context like a particular programming language version or operating system or has dependencies that have to be installed manually, also add a Requirements subsection.
+```bash
+pnpm run setup
+```
 
-## Usage
-Use examples liberally, and show the expected output if you can. It's helpful to have inline the smallest example of usage that you can demonstrate, while providing links to more sophisticated examples if they are too long to reasonably include in the README.
+## Запуск в разработке
 
-## Support
-Tell people where they can go to for help. It can be any combination of an issue tracker, a chat room, an email address, etc.
+```bash
+pnpm run dev
+```
 
-## Roadmap
-If you have ideas for releases in the future, it is a good idea to list them in the README.
+## Сборка и запуск production-версии
 
-## Contributing
-State if you are open to contributions and what your requirements are for accepting them.
+```bash
+pnpm run build
+pnpm start
+```
 
-For people who want to make changes to your project, it's helpful to have some documentation on how to get started. Perhaps there is a script that they should run or some environment variables that they need to set. Make these steps explicit. These instructions could also be useful to your future self.
+Скомпилированные файлы создаются в `dist/` и не публикуются в Git.
 
-You can also document commands to lint the code or run tests. These steps help to ensure high code quality and reduce the likelihood that the changes inadvertently break something. Having instructions for running tests is especially helpful if it requires external setup, such as starting a Selenium server for testing in a browser.
+## Тестирование и проверки
 
-## Authors and acknowledgment
-Show your appreciation to those who have contributed to the project.
+Отдельного набора автотестов в проекте нет. Перед публикацией и деплоем используйте доступные проверки:
 
-## License
-For open source projects, say how it is licensed.
+```bash
+pnpm run build
+pnpm run prisma:check
+```
 
-## Project status
-If you have run out of energy or time for your project, put a note at the top of the README saying that development has slowed down or stopped completely. Someone may choose to fork your project or volunteer to step in as a maintainer or owner, allowing your project to keep going. You can also make an explicit request for maintainers.
+## Примеры использования
+
+Пользовательские команды:
+
+| Команда | Описание |
+| --- | --- |
+| `/start` | регистрация и главное меню |
+| `/subscribe` | выбор тарифа и создание платежа |
+| `/mysub` | список активных подписок и ссылка подключения |
+| `/faq` | ответы на частые вопросы |
+| `/cancel` | выход из режима обращения в поддержку |
+
+Админская команда:
+
+```text
+/testsub 1m
+/testsub 3m
+```
+
+Команда доступна только пользователям из `ADMIN_TG_IDS`, если `ALLOW_TESTSUB` не установлен в `1`.
+
+## Важные примечания для разработчиков
+
+- Никогда не коммитьте `.env`, файлы SQLite, логи, `dist/`, `node_modules/`, `.cache/` и `.local/`.
+- Реальные секреты должны находиться только в локальном `.env` или в защищенных переменных окружения сервера.
+- После попадания токена или пароля в публичный репозиторий его нужно немедленно перевыпустить в соответствующем сервисе.
+- Для нескольких inbound используйте один `INBOUND_IDS`, чтобы бот создавал и удалял клиента согласованно.
+- В X-UI должны существовать inbound, указанные в окружении.
+- Для корректной выдачи subscription-ссылки `PUBLIC_SUB_URL` должен быть доступен пользователям извне.
+- При изменении схемы Prisma обновляйте миграции и проверяйте сборку.
+
+## Подготовка к публикации на GitHub
+
+Перед публикацией выполните:
+
+```bash
+pnpm run build
+git status --short --ignored
+```
+
+Проверьте, что в индекс не попали `.env`, локальные базы данных, сборка, кэш и другие временные файлы.

@@ -1,4 +1,3 @@
-
 import { PrismaClient } from '@prisma/client';
 
 const prisma = new PrismaClient();
@@ -6,11 +5,9 @@ const prisma = new PrismaClient();
 async function main() {
   console.log('Начинаю заполнение базы данных...');
   
-  // Создаем планы
   const plans = [
     { name: '1m', price: 199, duration: 30 },
     { name: '3m', price: 549, duration: 90 },
-    { name: '12m', price: 2199, duration: 365 },
   ];
 
   for (const plan of plans) {

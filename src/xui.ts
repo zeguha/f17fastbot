@@ -1,4 +1,3 @@
-// src/xui.ts
 import axios from 'axios';
 import { config } from './config';
 
@@ -6,9 +5,7 @@ interface ClientData {
   id: string;
   flow?: string;
   email: string;
-  // vmess
   security?: string;
-  // shadowsocks
   method?: string;
   password?: string;
   limitIp?: number;
@@ -34,7 +31,6 @@ class XUIClient {
   private sessionCookie: string = '';
 
   constructor() {
-    // Нормализуем, чтобы не получить двойной слэш в запросах: `${baseURL}/login`.
     this.baseURL = (config.xui.url || '').replace(/\/+$/, '');
     this.username = config.xui.login;
     this.password = config.xui.password;
@@ -42,7 +38,6 @@ class XUIClient {
 
   async login(): Promise<void> {
     try {
-      // В x-ui логин обычно ожидает application/x-www-form-urlencoded
       const form = new URLSearchParams();
       form.set('username', this.username);
       form.set('password', this.password);
@@ -154,8 +149,6 @@ class XUIClient {
 
       return response.data || { success: false, msg: 'Пустой ответ', obj: null };
     } catch (error: any) {
-      // В некоторых форках/версиях x-ui endpoint delClient отсутствует (404).
-      // Тогда используем безопасный fallback через get+update inbound.settings.clients.
       const status = error?.response?.status;
       if (status === 404) {
         return await this.deleteClientAlternative(inboundId, { clientId, email });
@@ -177,9 +170,6 @@ class XUIClient {
     await this.ensureAuth();
 
     try {
-      // В разных версиях x-ui методы могут отличаться:
-      // - GET /panel/api/inbounds/get/{id}
-      // - POST /panel/api/inbounds/get (часто 404)
       const httpsAgent = new (require('https').Agent)({ rejectUnauthorized: false });
 
       const response = await axios.get(
@@ -212,8 +202,6 @@ class XUIClient {
         return { success: false, msg: 'Ошибка парсинга настроек', obj: null };
       }
 
-      // Ищем клиента по id/email/subId/tgId. Важно: если не нашли — НЕ делаем update,
-      // иначе можно случайно перезаписать настройки инбаунда.
       const matched = clients.filter((client: any) => {
         const byId = criteria.clientId && client?.id === criteria.clientId;
         const byEmail = criteria.email && client?.email === criteria.email;
@@ -246,8 +234,6 @@ class XUIClient {
 
       settingsObj.clients = filteredClients;
 
-      // X-UI часто требует, чтобы update получил те же поля, что были у инбаунда.
-      // Поэтому формируем payload на основе текущего inbound, меняя только settings.
       const updateData: any = {
         id: inboundId,
         settings: JSON.stringify(settingsObj),

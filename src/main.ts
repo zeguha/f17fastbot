@@ -1,4 +1,3 @@
-// src/main.ts
 import 'dotenv/config';
 import { bot } from './bot';
 
@@ -25,7 +24,6 @@ async function startBot() {
   }
 }
 
-// Обработка завершения
 process.once('SIGINT', () => {
   console.log('\n🛑 Остановка бота...');
   bot.stop('SIGINT');
@@ -38,5 +36,4 @@ process.once('SIGTERM', () => {
   process.exit(0);
 });
 
-// Запуск бота
 startBot();

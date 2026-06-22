@@ -1,4 +1,3 @@
-// src/lava.ts
 import {
   Currency,
   InvoiceStatus,
@@ -24,7 +23,6 @@ class LavaClient {
   private client: LavaPublicSdkClient;
 
   constructor() {
-    // В SDK webhookSecretKey обязательный, даже если вебхуки не используем.
     this.client = new LavaPublicSdkClient({
       apiKey: config.lava.apiKey,
       webhookSecretKey: config.lava.webhookSecretKey || 'unused',
@@ -45,15 +43,10 @@ class LavaClient {
     return offerId;
   }
 
-  /**
-   * Создаёт инвойс в Lava Public API.
-   * Возвращает id инвойса и URL страницы оплаты.
-   */
   async createInvoice(planCode: string, email: string): Promise<{ id: string; url: string }> {
     const offerId = this.getOfferId(planCode);
     const currency = toSdkCurrency(config.lava.currency);
 
-    // Для наших планов используется разовая оплата (ONE_TIME)
     const invoice = await this.client.createOneTimePayment(email, offerId, currency);
 
     if (!invoice?.id) {
@@ -66,9 +59,6 @@ class LavaClient {
     return { id: invoice.id, url: invoice.paymentUrl };
   }
 
-  /**
-   * Возвращает статус инвойса.
-   */
   async getInvoiceStatus(invoiceId: string): Promise<{ status: LavaPaymentStatus; raw: unknown }> {
     const invoice = await this.client.getInvoices(invoiceId);
 
@@ -92,4 +82,3 @@ class LavaClient {
 }
 
 export const lavaClient = new LavaClient();
-
